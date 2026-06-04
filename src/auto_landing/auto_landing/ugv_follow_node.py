@@ -36,7 +36,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from geometry_msgs.msg import Twist
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float32
 from nav_msgs.msg import Odometry
 
 from px4_msgs.msg import VehicleOdometry
@@ -78,6 +78,7 @@ class UgvFollowNode(Node):
         self.declare_parameter('drone_odom_topic',    '/fmu/out/vehicle_odometry')
         self.declare_parameter('ugv_odom_topic',      '/odom')
         self.declare_parameter('cmd_vel_topic',       '/cmd_vel')
+        self.declare_parameter('distance_topic',      '/ugv/tether_distance')
 
         # XY 추종
         self.declare_parameter('xy_deadband',         0.3)    # m
@@ -131,6 +132,8 @@ class UgvFollowNode(Node):
         # ---- Publisher ----
         self.cmd_pub = self.create_publisher(
             Twist, self.get_parameter('cmd_vel_topic').value, 10)
+        self.dist_pub = self.create_publisher(
+            Float32, self.get_parameter('distance_topic').value, 10)
 
         # ---- Subscriber ----
         self.create_subscription(
@@ -154,6 +157,7 @@ class UgvFollowNode(Node):
 
         self.ugv_x   = 0.0
         self.ugv_y   = 0.0
+        self.ugv_z   = 0.0
         self.ugv_yaw = 0.0
         self.ugv_odom_ok = False
 
@@ -200,19 +204,28 @@ class UgvFollowNode(Node):
         q = msg.pose.pose.orientation
         self.ugv_x = float(p.x)
         self.ugv_y = float(p.y)
+        self.ugv_z = float(p.z)
         self.ugv_yaw = quat_to_yaw(q.x, q.y, q.z, q.w)
         self.ugv_odom_ok = True
 
     # ================= 제어 루프 =================
     def _control_loop(self):
-        if not self.active:
+        if not (self.drone_odom_ok and self.ugv_odom_ok):
+            if self.active:
+                self.get_logger().warn(
+                    'odometry 대기 중 (drone={}, ugv={})'.format(
+                        self.drone_odom_ok, self.ugv_odom_ok),
+                    throttle_duration_sec=2.0)
             return
 
-        if not (self.drone_odom_ok and self.ugv_odom_ok):
-            self.get_logger().warn(
-                'odometry 대기 중 (drone={}, ugv={})'.format(
-                    self.drone_odom_ok, self.ugv_odom_ok),
-                throttle_duration_sec=2.0)
+        # ── 3D 거리 계산 + 발행 (follow 비활성이어도 항상) ──
+        dx = self.drone_x - self.ugv_x
+        dy = self.drone_y - self.ugv_y
+        dz = self.drone_z - self.ugv_z
+        dist_3d = math.sqrt(dx * dx + dy * dy + dz * dz)
+        self.dist_pub.publish(Float32(data=float(dist_3d)))
+
+        if not self.active:
             return
 
         # 안전: 드론 고도가 너무 낮으면 정지
