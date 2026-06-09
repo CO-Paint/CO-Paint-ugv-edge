@@ -44,12 +44,18 @@ class PidLandingControllerNode(Node):
         self.declare_parameter('debug_gui', True)
         self.declare_parameter('marker_length', 0.055)   # m
 
+        # ---- 파라미터: 카메라 → UGV 중심 오프셋 (m) ----
+        # 카메라가 UGV 중심에서 얼마나 떨어져 있는지.
+        # 양수 = UGV 전방, 음수 = UGV 후방
+        self.declare_parameter('camera_offset_x', 0.047)  # 전방 4.7cm
+        self.declare_parameter('camera_offset_y', 0.0)    # 좌우 오프셋 없음
+
         # ---- 파라미터: XY PID ----
         self.declare_parameter('kp', 0.6)
         self.declare_parameter('ki', 0.01)
         self.declare_parameter('kd', 0.2)
         self.declare_parameter('error_deadband', 0.03)   # m
-        self.declare_parameter('output_limit', 0.15)     # m/s
+        self.declare_parameter('output_limit', 0.3)      # m/s (0.15에서 상향)
 
         # ---- 파라미터: Yaw PID ----
         self.declare_parameter('kp_yaw', 0.8)
@@ -61,6 +67,9 @@ class PidLandingControllerNode(Node):
         # 로드
         self.debug_gui      = bool(self.get_parameter('debug_gui').value)
         self.marker_length  = float(self.get_parameter('marker_length').value)
+
+        self.cam_offset_x   = float(self.get_parameter('camera_offset_x').value)
+        self.cam_offset_y   = float(self.get_parameter('camera_offset_y').value)
 
         self.kp             = float(self.get_parameter('kp').value)
         self.ki             = float(self.get_parameter('ki').value)
@@ -206,9 +215,11 @@ class PidLandingControllerNode(Node):
             cam_z = tvecs[0][0][2]
 
             # 카메라 → UGV base 좌표 매핑 (실기에서 부호 확인됨)
-            error_x   =  cam_y    # 전후 오차 (m)
-            error_y   = -cam_x    # 좌우 오차 (m)
-            drone_alt =  cam_z    # 고도 (m)
+            # 카메라가 UGV 중심에서 전방으로 offset만큼 떨어져 있으므로 보정.
+            # 드론이 UGV 정중앙 위에 있을 때 error=0이 되도록 함.
+            error_x   =  cam_y + self.cam_offset_x   # 전후 오차 (m)
+            error_y   = -cam_x + self.cam_offset_y   # 좌우 오차 (m)
+            drone_alt =  cam_z                        # 고도 (m)
 
             # rvec → yaw 오차 (rad). 부호는 실기 테스트에서 확정.
             error_yaw = self._extract_yaw_error(rvecs[0])
