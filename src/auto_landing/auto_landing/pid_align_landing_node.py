@@ -42,7 +42,7 @@ class PidLandingControllerNode(Node):
         self.declare_parameter('camera_index', 1)
         self.declare_parameter('camera_fallback_index', 0)
         self.declare_parameter('debug_gui', True)
-        self.declare_parameter('marker_length', 0.055)   # m
+        self.declare_parameter('marker_length', 0.095)   # m (9.5cm)
 
         # ---- 파라미터: 카메라 → UGV 중심 오프셋 (m) ----
         # 카메라가 UGV 중심에서 얼마나 떨어져 있는지.
